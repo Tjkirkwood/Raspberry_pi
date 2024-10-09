@@ -1,3 +1,6 @@
+#!/usr/bin/env python 
+# Author Tyler K.
+
 import time
 import cv2
 import os
