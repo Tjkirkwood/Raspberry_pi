@@ -1,1 +1,11 @@
+Author Tyler K.
+instruction for Camera 
+
+sudo apt update
+sudo apt install python3-opencv
+mkdir -p ~/opencv_haarcascades
+cd ~/opencv_haarcascades
+wget https://github.com/opencv/opencv/raw/master/data/haarcascades/haarcascade_frontalface_default.xml
+vim camera.py
+
 
