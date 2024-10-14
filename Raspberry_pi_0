@@ -4,6 +4,7 @@ import numpy as np
 import os
 import logging
 import signal
+from PIL import Image  # Import Pillow
 
 # Function to handle exit signals
 def signal_handler(sig, frame):
@@ -77,8 +78,16 @@ def apply_fisheye_effect(frame):
     
     return distorted_frame
 
+# Function to remove ICC profile from the image
+def remove_icc_profile(image_path):
+    try:
+        img = Image.open(image_path)
+        img.save(image_path, icc_profile=None)  # Save without ICC profile
+        print(f"ICC profile removed from: {image_path}")
+    except Exception as e:
+        print(f"Failed to remove ICC profile from {image_path}: {e}")
+
 last_snapshot_time = 0  # Timestamp of the last snapshot
-previous_frame = None  # To store the previous frame for motion detection
 frame_counter = 0  # Frame counter for reduced processing
 process_every_n_frames = 10  # Process every 10th frame to save CPU
 
@@ -103,6 +112,7 @@ def take_snapshot(frame):
 
     if os.path.exists(image_path):  # Check if the image was saved
         print(f"Snapshot saved to: {image_path}")
+        remove_icc_profile(image_path)  # Remove ICC profile after saving
     else:
         print(f"Failed to save snapshot to: {image_path}")
 
