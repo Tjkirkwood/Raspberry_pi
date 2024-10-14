@@ -62,7 +62,7 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set width
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set height
 
 # Set automatic white balance and exposure
-cap.set(cv2.CAP_PROP_AUTO_WB, True)
+cap.set(cv2.CAP_PROP_AUTO_WB, 1.0)  # Enable auto white balance
 cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # Enable auto exposure
 
 time.sleep(2)  # Allow the camera to warm up
