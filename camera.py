@@ -6,6 +6,10 @@ import cv2
 import os
 import logging
 import signal
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
 
 def signal_handler(sig, frame):
     print("\nExiting...")
@@ -15,7 +19,6 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# Get user input with validation
 def get_positive_integer(prompt):
     while True:
         try:
@@ -28,6 +31,7 @@ def get_positive_integer(prompt):
 
 snapshot_interval = get_positive_integer("Enter the time interval between snapshots (in seconds): ")
 test_shot_interval = get_positive_integer("Enter the interval for test shots (in seconds): ")
+motion_sensitivity = get_positive_integer("Enter the motion detection sensitivity (higher = more sensitive): ")
 
 # Set up logging
 log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
@@ -60,10 +64,15 @@ if not cap.isOpened():
 last_snapshot_time = 0
 previous_frame = None
 last_test_shot_time = 0
+is_recording = False
+video_writer = None
 
 def take_snapshot(frame):
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     image_path = os.path.join(picture_folder, f'snapshot_{timestamp}.jpg')
+    
+    # Add timestamp to the image
+    cv2.putText(frame, timestamp, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     cv2.imwrite(image_path, frame)
 
     if os.path.exists(image_path):
@@ -74,8 +83,30 @@ def take_snapshot(frame):
         print(f"Failed to save snapshot to: {image_path}")
         return "Failed to save snapshot"
 
+def send_email(subject, body):
+    sender_email = "your_email@example.com"
+    receiver_email = "receiver_email@example.com"
+    password = "your_email_password"
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(sender_email, password)
+            server.send_message(msg)
+            print("Email sent successfully.")
+    except Exception as e:
+        logging.error(f"Failed to send email: {e}")
+        print(f"Failed to send email: {e}")
+
 try:
     print("Press 'q' to quit the script.")
+
     ret, initial_frame = cap.read()
     if ret:
         notification = take_snapshot(initial_frame)
@@ -100,28 +131,44 @@ try:
         motion_detected = cv2.countNonZero(threshold)
         current_time = time.time()
 
-        if motion_detected > 500:  # Adjust based on environment
+        if motion_detected > motion_sensitivity:  # Use user-defined sensitivity
             if current_time - last_snapshot_time >= snapshot_interval:
                 notification = take_snapshot(frame)
+                send_email("Motion Detected", notification)
                 last_snapshot_time = current_time
+
+            # Start recording if motion is detected
+            if not is_recording:
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                video_file_path = os.path.join(picture_folder, f'recording_{time.strftime("%Y-%m-%d_%H-%M-%S")}.avi')
+                video_writer = cv2.VideoWriter(video_file_path, fourcc, 20.0, (640, 480))
+                is_recording = True
+
+        # Stop recording if no motion is detected
+        if is_recording and motion_detected < motion_sensitivity:
+            video_writer.release()
+            is_recording = False
+
+        if is_recording:
+            video_writer.write(frame)
 
         if current_time - last_test_shot_time >= test_shot_interval:
             notification = take_snapshot(frame)
             last_test_shot_time = current_time
 
-        # Reduce the number of face detections to improve performance
-        if current_time - last_snapshot_time < snapshot_interval:  # Only detect faces if enough time has passed
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-            for (x, y, w, h) in faces:
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # Face detection
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
         previous_frame = gray
 
         if 'notification' in locals():
-            cv2.putText(frame, notification, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.putText(frame, notification, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             time.sleep(1)
             del notification
 
+        # Display the camera feed
         cv2.imshow("Camera Feed", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -133,6 +180,8 @@ except Exception as e:
     print(f"Error: {e}")
 
 finally:
+    if is_recording:
+        video_writer.release()
     cap.release()
     cv2.destroyAllWindows()
     logging.info("Camera feed closed.")
