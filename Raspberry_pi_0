@@ -1,0 +1,139 @@
+import time
+import cv2
+import numpy as np
+import os
+import logging
+import signal
+
+# Function to handle exit signals
+def signal_handler(sig, frame):
+    print("\nExiting...")
+    cap.release()
+    cv2.destroyAllWindows()
+    exit(0)
+
+# Set up signal handling
+signal.signal(signal.SIGINT, signal_handler)
+
+# Ask the user for the time interval between snapshots
+while True:
+    try:
+        snapshot_interval = int(input("Enter the time interval between snapshots (in seconds): "))
+        if snapshot_interval <= 0:
+            raise ValueError("The interval must be a positive integer.")
+        break
+    except ValueError as e:
+        print(f"Invalid input: {e}. Please enter a positive integer.")
+
+# Set up logging
+log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
+os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
+logging.basicConfig(
+    filename=log_file_path,
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
+
+# Create a folder for pictures if it doesn't exist
+picture_folder = os.path.expanduser('~/Pictures/security')
+os.makedirs(picture_folder, exist_ok=True)
+
+# Load the Haar Cascade for face detection
+face_cascade_path = '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml'
+face_cascade = cv2.CascadeClassifier(face_cascade_path)
+
+# Initialize the webcam
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)  # Set width to 320 for lower processing
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)  # Set height to 240 for lower processing
+time.sleep(2)  # Allow the camera to warm up
+
+# Check if the camera opened correctly
+if not cap.isOpened():
+    logging.error("Cannot open camera")
+    print("Error: Cannot open camera.")
+    exit()
+
+# Function to apply fisheye effect
+def apply_fisheye_effect(frame):
+    height, width = frame.shape[:2]
+    
+    # Create a distortion map for fisheye effect
+    K = np.array([[width, 0, width // 2],
+                  [0, width, height // 2],
+                  [0, 0, 1]], dtype=np.float32)  # Intrinsic camera matrix
+    
+    D = np.array([0.3, -0.3, 0.0, 0.0], dtype=np.float32)  # Distortion coefficients
+    
+    # Create the new camera matrix based on the desired scaling factor (here: 1.0)
+    new_camera_matrix, _ = cv2.getOptimalNewCameraMatrix(K, D, (width, height), 1, (width, height))
+    
+    # Create the map for remapping the image to simulate the fisheye effect
+    map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, np.eye(3), new_camera_matrix, (width, height), cv2.CV_16SC2)
+    
+    # Apply the fisheye effect by remapping the frame
+    distorted_frame = cv2.remap(frame, map1, map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    
+    return distorted_frame
+
+last_snapshot_time = 0  # Timestamp of the last snapshot
+previous_frame = None  # To store the previous frame for motion detection
+frame_counter = 0  # Frame counter for reduced processing
+process_every_n_frames = 10  # Process every 10th frame to save CPU
+
+# Function to take a snapshot
+def take_snapshot(frame):
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    image_path = os.path.join(picture_folder, f'snapshot_{timestamp}.jpg')
+    cv2.imwrite(image_path, frame)
+
+    if os.path.exists(image_path):  # Check if the image was saved
+        print(f"Snapshot saved to: {image_path}")
+    else:
+        print(f"Failed to save snapshot to: {image_path}")
+
+    logging.info(f"Snapshot taken and saved to {image_path}")
+    return f"Snapshot saved to: {image_path}"  # Return the notification message
+
+try:
+    print("Press 'q' to quit the script.")
+
+    while True:
+        # Capture a frame from the camera
+        ret, frame = cap.read()
+        if not ret:
+            logging.error("Failed to capture frame.")
+            print("Error: Failed to capture frame.")
+            break
+
+        # Apply fisheye effect to the frame every nth frame
+        if frame_counter % process_every_n_frames == 0:
+            fisheye_frame = apply_fisheye_effect(frame)
+
+            # Periodic snapshot based on snapshot_interval
+            current_time = time.time()
+            if current_time - last_snapshot_time >= snapshot_interval:
+                notification = take_snapshot(fisheye_frame)
+                last_snapshot_time = current_time  # Update the last snapshot time
+
+        # Display the camera feed with fisheye effect
+        cv2.imshow("Camera Feed with Fisheye Effect", fisheye_frame)
+
+        frame_counter += 1  # Increment frame counter
+
+        # Quit the script if 'q' is pressed
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("Quitting the script...")
+            break
+
+except Exception as e:
+    logging.error(f"An error occurred: {e}")
+    print(f"Error: {e}")
+
+finally:
+    # Release the camera and close any OpenCV windows
+    cap.release()
+    cv2.destroyAllWindows()
+    logging.info("Camera feed closed.")
+    print("Camera feed closed.")
