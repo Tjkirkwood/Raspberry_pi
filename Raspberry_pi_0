@@ -89,20 +89,7 @@ def remove_icc_profile(image_path):
 
 last_snapshot_time = 0  # Timestamp of the last snapshot
 frame_counter = 0  # Frame counter for reduced processing
-process_every_n_frames = 10  # Process every 10th frame to save CPU
-
-# Define the central region for object detection
-def is_in_center(x, y, w, h, frame_width, frame_height):
-    # Define the center region as the middle 50% of the frame
-    center_x_start = int(0.25 * frame_width)
-    center_x_end = int(0.75 * frame_width)
-    center_y_start = int(0.25 * frame_height)
-    center_y_end = int(0.75 * frame_height)
-
-    # Check if the object's bounding box is within the center region
-    if (x + w // 2) > center_x_start and (x + w // 2) < center_x_end and (y + h // 2) > center_y_start and (y + h // 2) < center_y_end:
-        return True
-    return False
+process_every_n_frames = 3  # Process every 3rd frame to increase snapshots
 
 # Function to take a snapshot
 def take_snapshot(frame):
@@ -138,32 +125,21 @@ try:
             gray = cv2.cvtColor(fisheye_frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-            # Check if any faces are detected in the center of the frame
+            # Take a snapshot if any face is detected
+            if len(faces) > 0:
+                current_time = time.time()
+                if current_time - last_snapshot_time >= snapshot_interval:
+                    take_snapshot(fisheye_frame)  # Save snapshot
+                    last_snapshot_time = current_time  # Update the last snapshot time
+
+            # Draw rectangles around faces for feedback
             for (x, y, w, h) in faces:
-                if is_in_center(x, y, w, h, fisheye_frame.shape[1], fisheye_frame.shape[0]):
-                    # Periodic snapshot based on snapshot_interval
-                    current_time = time.time()
-                    if current_time - last_snapshot_time >= snapshot_interval:
-                        notification = take_snapshot(fisheye_frame)
-                        last_snapshot_time = current_time  # Update the last snapshot time
+                cv2.rectangle(fisheye_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-            # Draw rectangles around faces and display center box for visual reference
-            for (x, y, w, h) in faces:
-                if is_in_center(x, y, w, h, fisheye_frame.shape[1], fisheye_frame.shape[0]):
-                    color = (0, 255, 0)  # Green for objects in the center
-                else:
-                    color = (0, 0, 255)  # Red for objects outside the center
-                cv2.rectangle(fisheye_frame, (x, y), (x+w, y+h), color, 2)
-
-            # Display the center region for visual feedback
-            frame_height, frame_width = fisheye_frame.shape[:2]
-            cv2.rectangle(fisheye_frame, (int(0.25 * frame_width), int(0.25 * frame_height)),
-                          (int(0.75 * frame_width), int(0.75 * frame_height)), (255, 255, 255), 2)
-
-        # Display the camera feed with fisheye effect and center box
+        # Display the camera feed with fisheye effect
         cv2.imshow("Camera Feed with Fisheye Effect", fisheye_frame)
 
-        frame_counter += 1  # Increment frame counter
+        frame_counter += 1
 
         # Quit the script if 'q' is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
