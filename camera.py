@@ -6,6 +6,8 @@ import cv2
 import os
 import logging
 import signal
+import tkinter as tk
+from tkinter import simpledialog, messagebox
 
 # Function to handle exit signals
 def signal_handler(sig, frame):
@@ -17,25 +19,29 @@ def signal_handler(sig, frame):
 # Set up signal handling
 signal.signal(signal.SIGINT, signal_handler)
 
-# Ask the user for the time interval between snapshots
-while True:
-    try:
-        snapshot_interval = int(input("Enter the time interval between snapshots (in seconds): "))
-        if snapshot_interval <= 0:
-            raise ValueError("The interval must be a positive integer.")
-        break
-    except ValueError as e:
-        print(f"Invalid input: {e}. Please enter a positive integer.")
+# Function to get motion sensitivity from user
+def get_motion_sensitivity():
+    while True:
+        try:
+            sensitivity = simpledialog.askinteger("Motion Sensitivity", 
+                                                   "Enter the motion detection sensitivity (500-800):",
+                                                   minvalue=500, maxvalue=800)
+            if sensitivity is None:
+                return 500  # Default value
+            return sensitivity
+        except ValueError as e:
+            messagebox.showerror("Invalid input", str(e))
+            continue
 
-# Ask the user for the interval for test shots
-while True:
-    try:
-        test_shot_interval = int(input("Enter the interval for test shots (in seconds): "))
-        if test_shot_interval <= 0:
-            raise ValueError("The interval must be a positive integer.")
-        break
-    except ValueError as e:
-        print(f"Invalid input: {e}. Please enter a positive integer.")
+# Function to set up the GUI
+def setup_gui():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+
+    # Get motion sensitivity
+    motion_sensitivity = get_motion_sensitivity()
+
+    return motion_sensitivity
 
 # Set up logging
 log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
@@ -84,6 +90,9 @@ def take_snapshot(frame):
 
     logging.info(f"Snapshot taken and saved to {image_path}")
 
+# Start GUI to get settings
+motion_sensitivity = setup_gui()
+
 try:
     print("Press 'q' to quit the script.")
 
@@ -121,7 +130,7 @@ try:
         current_time = time.time()
 
         # Check for motion
-        if motion_detected > 500:  # Adjust this threshold based on your environment
+        if motion_detected > motion_sensitivity:  # Use dynamic sensitivity
             # If faces are detected and enough time has passed since the last snapshot
             if current_time - last_snapshot_time >= snapshot_interval:
                 take_snapshot(frame)
@@ -139,13 +148,6 @@ try:
 
         # Update the previous frame for motion detection
         previous_frame = gray
-
-        # Optional: Display the notification on the camera feed
-        # Removed email notifications
-        if 'notification' in locals():
-            cv2.putText(frame, notification, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
-            time.sleep(1)  # Display the notification for a short time
-            del notification  # Clear the notification after displaying
 
         # Display the camera feed
         cv2.imshow("Camera Feed", frame)
