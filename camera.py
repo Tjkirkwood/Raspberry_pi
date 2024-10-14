@@ -6,8 +6,7 @@ import cv2
 import os
 import logging
 import signal
-import tkinter as tk
-from tkinter import simpledialog, messagebox
+import numpy as np
 
 # Function to handle exit signals
 def signal_handler(sig, frame):
@@ -19,59 +18,25 @@ def signal_handler(sig, frame):
 # Set up signal handling
 signal.signal(signal.SIGINT, signal_handler)
 
-# Function to get user input for motion sensitivity, test shot interval, and snapshot interval
-def get_user_settings():
-    settings = {}
+# Ask the user for the time interval between snapshots
+while True:
+    try:
+        snapshot_interval = int(input("Enter the time interval between snapshots (in seconds): "))
+        if snapshot_interval <= 0:
+            raise ValueError("The interval must be a positive integer.")
+        break
+    except ValueError as e:
+        print(f"Invalid input: {e}. Please enter a positive integer.")
 
-    # Get motion sensitivity
-    while True:
-        try:
-            sensitivity = simpledialog.askinteger("Motion Sensitivity", 
-                                                   "Enter the motion detection sensitivity (500-800):",
-                                                   minvalue=500, maxvalue=800)
-            if sensitivity is None:
-                settings['motion_sensitivity'] = 500  # Default value
-            else:
-                settings['motion_sensitivity'] = sensitivity
-            break
-        except ValueError as e:
-            messagebox.showerror("Invalid input", str(e))
-
-    # Get test shot interval
-    while True:
-        try:
-            interval = simpledialog.askinteger("Test Shot Interval", 
-                                                "Enter the interval for test shots (in seconds):",
-                                                minvalue=1)
-            if interval is None:
-                settings['test_shot_interval'] = 10  # Default value
-            else:
-                settings['test_shot_interval'] = interval
-            break
-        except ValueError as e:
-            messagebox.showerror("Invalid input", str(e))
-
-    # Get snapshot interval
-    while True:
-        try:
-            snapshot_interval = simpledialog.askinteger("Snapshot Interval", 
-                                                        "Enter the time interval between snapshots (in seconds):",
-                                                        minvalue=1)
-            if snapshot_interval is None:
-                settings['snapshot_interval'] = 10  # Default value
-            else:
-                settings['snapshot_interval'] = snapshot_interval
-            break
-        except ValueError as e:
-            messagebox.showerror("Invalid input", str(e))
-
-    return settings
-
-# Function to set up the GUI
-def setup_gui():
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
-    return get_user_settings()
+# Ask the user for the interval for test shots
+while True:
+    try:
+        test_shot_interval = int(input("Enter the interval for test shots (in seconds): "))
+        if test_shot_interval <= 0:
+            raise ValueError("The interval must be a positive integer.")
+        break
+    except ValueError as e:
+        print(f"Invalid input: {e}. Please enter a positive integer.")
 
 # Set up logging
 log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
@@ -105,19 +70,34 @@ if not cap.isOpened():
 
 last_snapshot_time = 0  # Timestamp of the last snapshot
 previous_frame = None  # To store the previous frame for motion detection
+last_test_shot_time = 0  # Timestamp of the last test shot
 
-# Start GUI to get settings
-settings = setup_gui()
-motion_sensitivity = settings['motion_sensitivity']
-test_shot_interval = settings['test_shot_interval']
-snapshot_interval = settings['snapshot_interval']  # Get snapshot interval from settings
-last_test_shot_time = time.time()  # Timestamp of the last test shot
+# Function to enhance image quality
+def enhance_image(frame):
+    # Sharpen the image
+    kernel = np.array([[0, -1, 0],
+                       [-1, 5, -1],
+                       [0, -1, 0]])
+    sharpened = cv2.filter2D(frame, -1, kernel)
+
+    # Denoise the image
+    denoised = cv2.fastNlMeansDenoisingColored(sharpened, None, 10, 10, 7, 21)
+
+    # Enhance contrast
+    gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
+    equalized = cv2.equalizeHist(gray)
+    enhanced_frame = cv2.cvtColor(equalized, cv2.COLOR_GRAY2BGR)
+
+    return enhanced_frame
 
 # Function to take a snapshot
 def take_snapshot(frame):
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     image_path = os.path.join(picture_folder, f'snapshot_{timestamp}.jpg')
-    cv2.imwrite(image_path, frame)
+
+    # Enhance the image before saving
+    enhanced_frame = enhance_image(frame)
+    cv2.imwrite(image_path, enhanced_frame)
 
     if os.path.exists(image_path):  # Check if the image was saved
         print(f"Snapshot saved to: {image_path}")
@@ -125,6 +105,7 @@ def take_snapshot(frame):
         print(f"Failed to save snapshot to: {image_path}")
 
     logging.info(f"Snapshot taken and saved to {image_path}")
+    return f"Snapshot saved to: {image_path}"  # Return the notification message
 
 try:
     print("Press 'q' to quit the script.")
@@ -132,7 +113,8 @@ try:
     # Take an initial test shot at the start
     ret, initial_frame = cap.read()
     if ret:
-        take_snapshot(initial_frame)
+        notification = take_snapshot(initial_frame)
+    last_test_shot_time = time.time()  # Update the last test shot time
 
     while True:
         # Capture a frame from the camera
@@ -162,15 +144,15 @@ try:
         current_time = time.time()
 
         # Check for motion
-        if motion_detected > motion_sensitivity:  # Use dynamic sensitivity
-            # If enough time has passed since the last snapshot
+        if motion_detected > 500:  # Adjust this threshold based on your environment
+            # If faces are detected and enough time has passed since the last snapshot
             if current_time - last_snapshot_time >= snapshot_interval:
-                take_snapshot(frame)
+                notification = take_snapshot(frame)
                 last_snapshot_time = current_time  # Update the last snapshot time
 
         # Periodic test shots
         if current_time - last_test_shot_time >= test_shot_interval:
-            take_snapshot(frame)
+            notification = take_snapshot(frame)
             last_test_shot_time = current_time  # Update the last test shot time
 
         # Draw rectangles around detected faces for visualization
@@ -180,6 +162,12 @@ try:
 
         # Update the previous frame for motion detection
         previous_frame = gray
+
+        # Optional: Display the notification on the camera feed
+        if 'notification' in locals():
+            cv2.putText(frame, notification, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+            time.sleep(1)  # Display the notification for a short time
+            del notification  # Clear the notification after displaying
 
         # Display the camera feed
         cv2.imshow("Camera Feed", frame)
