@@ -7,6 +7,8 @@ import os
 import logging
 import signal
 import numpy as np
+import tkinter as tk
+from tkinter import simpledialog, messagebox
 
 # Function to handle exit signals
 def signal_handler(sig, frame):
@@ -18,25 +20,29 @@ def signal_handler(sig, frame):
 # Set up signal handling
 signal.signal(signal.SIGINT, signal_handler)
 
-# Ask the user for the time interval between snapshots
-while True:
-    try:
-        snapshot_interval = int(input("Enter the time interval between snapshots (in seconds): "))
-        if snapshot_interval <= 0:
-            raise ValueError("The interval must be a positive integer.")
-        break
-    except ValueError as e:
-        print(f"Invalid input: {e}. Please enter a positive integer.")
+# Create a simple GUI to get user input
+def ask_for_intervals():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
 
-# Ask the user for the interval for test shots
-while True:
-    try:
-        test_shot_interval = int(input("Enter the interval for test shots (in seconds): "))
-        if test_shot_interval <= 0:
-            raise ValueError("The interval must be a positive integer.")
-        break
-    except ValueError as e:
-        print(f"Invalid input: {e}. Please enter a positive integer.")
+    # Ask for the snapshot interval
+    snapshot_interval = simpledialog.askinteger("Input", "Enter the time interval between snapshots (in seconds):",
+                                                 minvalue=1)
+    if snapshot_interval is None:
+        messagebox.showerror("Error", "You must enter a valid snapshot interval.")
+        exit()
+
+    # Ask for the test shot interval
+    test_shot_interval = simpledialog.askinteger("Input", "Enter the interval for test shots (in seconds):",
+                                                  minvalue=1)
+    if test_shot_interval is None:
+        messagebox.showerror("Error", "You must enter a valid test shot interval.")
+        exit()
+
+    return snapshot_interval, test_shot_interval
+
+# Get user-defined intervals
+snapshot_interval, test_shot_interval = ask_for_intervals()
 
 # Set up logging
 log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
@@ -145,7 +151,7 @@ try:
 
         # Check for motion
         if motion_detected > 500:  # Adjust this threshold based on your environment
-            # If faces are detected and enough time has passed since the last snapshot
+            # If enough time has passed since the last snapshot
             if current_time - last_snapshot_time >= snapshot_interval:
                 notification = take_snapshot(frame)
                 last_snapshot_time = current_time  # Update the last snapshot time
