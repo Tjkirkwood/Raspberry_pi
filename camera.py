@@ -19,29 +19,59 @@ def signal_handler(sig, frame):
 # Set up signal handling
 signal.signal(signal.SIGINT, signal_handler)
 
-# Function to get motion sensitivity from user
-def get_motion_sensitivity():
+# Function to get user input for motion sensitivity, test shot interval, and snapshot interval
+def get_user_settings():
+    settings = {}
+
+    # Get motion sensitivity
     while True:
         try:
             sensitivity = simpledialog.askinteger("Motion Sensitivity", 
                                                    "Enter the motion detection sensitivity (500-800):",
                                                    minvalue=500, maxvalue=800)
             if sensitivity is None:
-                return 500  # Default value
-            return sensitivity
+                settings['motion_sensitivity'] = 500  # Default value
+            else:
+                settings['motion_sensitivity'] = sensitivity
+            break
         except ValueError as e:
             messagebox.showerror("Invalid input", str(e))
-            continue
+
+    # Get test shot interval
+    while True:
+        try:
+            interval = simpledialog.askinteger("Test Shot Interval", 
+                                                "Enter the interval for test shots (in seconds):",
+                                                minvalue=1)
+            if interval is None:
+                settings['test_shot_interval'] = 10  # Default value
+            else:
+                settings['test_shot_interval'] = interval
+            break
+        except ValueError as e:
+            messagebox.showerror("Invalid input", str(e))
+
+    # Get snapshot interval
+    while True:
+        try:
+            snapshot_interval = simpledialog.askinteger("Snapshot Interval", 
+                                                        "Enter the time interval between snapshots (in seconds):",
+                                                        minvalue=1)
+            if snapshot_interval is None:
+                settings['snapshot_interval'] = 10  # Default value
+            else:
+                settings['snapshot_interval'] = snapshot_interval
+            break
+        except ValueError as e:
+            messagebox.showerror("Invalid input", str(e))
+
+    return settings
 
 # Function to set up the GUI
 def setup_gui():
     root = tk.Tk()
     root.withdraw()  # Hide the root window
-
-    # Get motion sensitivity
-    motion_sensitivity = get_motion_sensitivity()
-
-    return motion_sensitivity
+    return get_user_settings()
 
 # Set up logging
 log_file_path = os.path.expanduser('~/Pictures/security_camera.log')
@@ -75,7 +105,13 @@ if not cap.isOpened():
 
 last_snapshot_time = 0  # Timestamp of the last snapshot
 previous_frame = None  # To store the previous frame for motion detection
-last_test_shot_time = 0  # Timestamp of the last test shot
+
+# Start GUI to get settings
+settings = setup_gui()
+motion_sensitivity = settings['motion_sensitivity']
+test_shot_interval = settings['test_shot_interval']
+snapshot_interval = settings['snapshot_interval']  # Get snapshot interval from settings
+last_test_shot_time = time.time()  # Timestamp of the last test shot
 
 # Function to take a snapshot
 def take_snapshot(frame):
@@ -90,9 +126,6 @@ def take_snapshot(frame):
 
     logging.info(f"Snapshot taken and saved to {image_path}")
 
-# Start GUI to get settings
-motion_sensitivity = setup_gui()
-
 try:
     print("Press 'q' to quit the script.")
 
@@ -100,7 +133,6 @@ try:
     ret, initial_frame = cap.read()
     if ret:
         take_snapshot(initial_frame)
-    last_test_shot_time = time.time()  # Update the last test shot time
 
     while True:
         # Capture a frame from the camera
@@ -131,7 +163,7 @@ try:
 
         # Check for motion
         if motion_detected > motion_sensitivity:  # Use dynamic sensitivity
-            # If faces are detected and enough time has passed since the last snapshot
+            # If enough time has passed since the last snapshot
             if current_time - last_snapshot_time >= snapshot_interval:
                 take_snapshot(frame)
                 last_snapshot_time = current_time  # Update the last snapshot time
